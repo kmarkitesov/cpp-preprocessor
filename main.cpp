@@ -10,12 +10,75 @@
 using namespace std;
 using filesystem::path;
 
+static const regex local_include("\\s*#\\s*include\\s*\"([^\"]*)\"\\s*");
+static const regex system_include("\\s*#\\s*include\\s*<([^>]*)>\\s*");
+
+bool ProcessIncludeFile(const string& include_path, const path& current_file, ostream& output_stream, const vector<path>& include_directories, size_t line_number);
+bool Preprocess(istream& input_stream, ostream& output_stream, const path& current_file, const vector<path>& include_directories);
+bool Preprocess(const path& in_file, const path& out_file, const vector<path>& include_directories);
+
 path operator""_p(const char* data, std::size_t sz) {
     return path(data, data + sz);
 }
 
+bool ProcessIncludeFile(const string& include_path, const path& current_file, ostream& output_stream, const vector<path>& include_directories, size_t line_number) {
+    path include_file = current_file.parent_path() / include_path;
+    ifstream include_stream(include_file);
+
+    for (const auto& directory : include_directories) {
+        if (include_stream.is_open()) break;
+        include_file = directory / include_path;
+        include_stream.open(include_file);
+    }
+
+    if (!include_stream.is_open()) {
+        cout << "unknown include file " << include_path << " at file " << current_file.string() << " at line " << line_number << endl;
+        return false;
+    }
+
+    return Preprocess(include_stream, output_stream, include_file, include_directories);
+}
+
+bool Preprocess(istream& input_stream, ostream& output_stream, const path& current_file, const vector<path>& include_directories){
+    string file_line;
+    size_t file_line_number = 0;
+
+    while(getline(input_stream, file_line)){
+        ++file_line_number;
+        smatch match;
+
+        if(regex_match(file_line, match, local_include)){
+           if(!ProcessIncludeFile(match[1].str(), current_file, output_stream, include_directories, file_line_number)){
+                return false;
+           }
+        } 
+        else if (regex_match(file_line, match, system_include)){
+            if(!ProcessIncludeFile(match[1].str(), current_file, output_stream, include_directories, file_line_number)){
+                return false;
+           }
+        }
+        else {
+            output_stream << file_line << '\n';
+        }
+    }
+
+    return true;
+}
+
 // напишите эту функцию
-bool Preprocess(const path& in_file, const path& out_file, const vector<path>& include_directories);
+bool Preprocess(const path& in_file, const path& out_file, const vector<path>& include_directories){
+    ifstream istream(in_file);
+    if(!istream.is_open()){
+        return false;
+    }
+
+    ofstream ostream(out_file);
+    if(!ostream.is_open()){
+        return false;
+    }
+
+    return Preprocess(istream, ostream, in_file, include_directories);
+}
 
 string GetFileContents(string file) {
     ifstream stream(file);
